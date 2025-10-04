@@ -350,6 +350,9 @@ def handle_extraction_tab():
         calculator = FinancialCalculator(normalized_df)
         metrics = calculator.calculate_all_metrics()
         metrics_df = calculator.get_metrics_dataframe()
+        
+        # Store metrics in session state for Q&A
+        st.session_state.calculated_metrics = metrics
 
     if not metrics_df.empty:
         st.success(f"✅ Calculated {len(metrics_df)} financial metrics")
@@ -528,11 +531,21 @@ def handle_extraction_tab():
                     if st.button("Get Answer", type="primary", use_container_width=True):
                         if question:
                             with st.spinner("Analyzing documents..."):
-                                result = qa_service.answer_question(question, k=k, min_similarity=min_sim)
+                                # Use enhanced Q&A with metrics
+                                result = qa_service.answer_question_with_metrics(
+                                    question, 
+                                    metrics=metrics,
+                                    k=k, 
+                                    min_similarity=min_sim
+                                )
                             
                             if result.get('success'):
                                 st.markdown("### 💡 Answer")
                                 st.markdown(result.get('answer', 'No answer generated'))
+                                
+                                # Show if metrics were used
+                                if result.get('metrics_used'):
+                                    st.info(f"📊 Enhanced with calculated metrics: {', '.join(result['metrics_used'])}")
                                 
                                 # Show confidence
                                 confidence = result.get('confidence', 0.0)
@@ -677,6 +690,10 @@ def handle_qa_tab():
     (Retrieval Augmented Generation). The system will search through your documents and 
     provide answers with source citations.
     """)
+    
+    # Show if metrics are available from extraction tab
+    if st.session_state.get('calculated_metrics'):
+        st.info("📊 Financial metrics from extraction tab are available - answers will be enhanced with calculated values!")
 
     # Initialize QA service in session state
     if 'qa_service' not in st.session_state:
@@ -787,16 +804,31 @@ def handle_qa_tab():
             st.warning("Please enter a question")
         else:
             with st.spinner("Searching documents and generating answer..."):
-                result = qa_service.answer_question(
-                    question=question,
-                    k=k,
-                    min_similarity=min_similarity
-                )
+                # Check if metrics are available from previous extraction
+                metrics = st.session_state.get('calculated_metrics', None)
+                
+                if metrics:
+                    result = qa_service.answer_question_with_metrics(
+                        question=question,
+                        metrics=metrics,
+                        k=k,
+                        min_similarity=min_similarity
+                    )
+                else:
+                    result = qa_service.answer_question(
+                        question=question,
+                        k=k,
+                        min_similarity=min_similarity
+                    )
             
             if result.get('success'):
                 st.markdown("---")
                 st.subheader("💡 Answer")
                 st.markdown(result.get('answer', 'No answer generated'))
+                
+                # Show if metrics were used
+                if result.get('metrics_used'):
+                    st.info(f"📊 Enhanced with calculated metrics: {', '.join(result['metrics_used'])}")
                 
                 # Show confidence
                 confidence = result.get('confidence', 0.0)

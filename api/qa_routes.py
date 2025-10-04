@@ -148,6 +148,74 @@ class QAService:
                 'answer': 'An error occurred while processing your question.',
                 'sources': []
             }
+    
+    def answer_question_with_metrics(self, question: str, metrics: Dict[str, float] = None,
+                                    k: int = 5, min_similarity: float = 0.3) -> Dict[str, Any]:
+        """
+        Answer a question using both RAG and available metrics for enhanced responses.
+
+        Args:
+            question: Question to answer
+            metrics: Optional dictionary of calculated financial metrics
+            k: Number of context chunks to retrieve
+            min_similarity: Minimum similarity threshold
+
+        Returns:
+            Answer dictionary with sources and metric-enhanced answer
+        """
+        try:
+            # Get base RAG answer
+            result = self.answer_question(question, k, min_similarity)
+            
+            if not result.get('success'):
+                return result
+            
+            # Enhance answer with metrics if available
+            if metrics:
+                answer = result.get('answer', '')
+                enhanced_parts = [answer]
+                
+                # Check if question relates to specific metrics
+                question_lower = question.lower()
+                
+                metric_mappings = {
+                    'profit margin': ['gross_profit_margin', 'operating_profit_margin', 'net_profit_margin'],
+                    'margin': ['gross_profit_margin', 'operating_profit_margin', 'net_profit_margin'],
+                    'liquidity': ['current_ratio', 'quick_ratio', 'cash_ratio'],
+                    'debt': ['debt_to_equity', 'debt_ratio'],
+                    'efficiency': ['asset_turnover', 'inventory_turnover', 'receivables_turnover'],
+                    'return': ['return_on_assets', 'return_on_equity', 'return_on_invested_capital'],
+                    'current ratio': ['current_ratio'],
+                    'quick ratio': ['quick_ratio'],
+                    'debt to equity': ['debt_to_equity'],
+                }
+                
+                # Add relevant metric values to the answer
+                metrics_added = []
+                for keyword, metric_names in metric_mappings.items():
+                    if keyword in question_lower:
+                        for metric_name in metric_names:
+                            if metric_name in metrics and metric_name not in metrics_added:
+                                value = metrics[metric_name]
+                                suffix = "%" if "margin" in metric_name or "return" in metric_name else ""
+                                metric_title = metric_name.replace('_', ' ').title()
+                                enhanced_parts.append(f"\n**Calculated {metric_title}**: {value}{suffix}")
+                                metrics_added.append(metric_name)
+                
+                if metrics_added:
+                    result['answer'] = '\n'.join(enhanced_parts)
+                    result['metrics_used'] = metrics_added
+            
+            return result
+
+        except Exception as e:
+            logger.error(f"Error answering question with metrics: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'answer': 'An error occurred while processing your question.',
+                'sources': []
+            }
 
     def get_knowledge_base_stats(self) -> Dict[str, Any]:
         """Get statistics about the knowledge base."""
