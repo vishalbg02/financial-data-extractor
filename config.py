@@ -67,3 +67,16 @@ MODEL_CONFIG = {
 ALLOWED_EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.csv']
 ALLOWED_PDF_EXTENSIONS = ['.pdf']
 MAX_FILE_SIZE_MB = 100  # Maximum file size in megabytes
+
+# RAG Configuration
+RAG_CONFIG = {
+    "chunk_size": 1000,
+    "chunk_overlap": 200,
+    "top_k_results": 5,
+    "similarity_threshold": 0.7,
+    "max_conversation_history": 10,
+}
+
+# Vector Store Settings
+VECTOR_STORE_DIR = DATA_DIR / "vector_store"
+VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)

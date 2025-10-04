@@ -13,7 +13,9 @@ from extractors.excel_extractor import ExcelExtractor
 from extractors.pdf_extractor import PDFExtractor
 from processors.data_normalizer import DataNormalizer
 from processors.financial_calculator import FinancialCalculator
-from config import ALLOWED_EXCEL_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, MAX_FILE_SIZE_MB
+from processors.rag_processor import RAGProcessor
+from utils.document_extractor import DocumentTextExtractor
+from config import ALLOWED_EXCEL_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, MAX_FILE_SIZE_MB, RAG_CONFIG
 
 # Page configuration
 st.set_page_config(
@@ -53,6 +55,227 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def render_rag_tab(uploaded_files):
+    """Render the RAG Q&A tab"""
+    st.header("🤖 RAG Document Q&A")
+    
+    st.markdown("""
+    Ask questions about your uploaded documents using Retrieval-Augmented Generation (RAG).
+    The system will search through your documents and provide answers with source references.
+    """)
+    
+    # Initialize RAG processor in session state
+    if 'rag_processor' not in st.session_state:
+        st.session_state.rag_processor = RAGProcessor(
+            chunk_size=RAG_CONFIG['chunk_size'],
+            chunk_overlap=RAG_CONFIG['chunk_overlap'],
+            top_k=RAG_CONFIG['top_k_results'],
+            similarity_threshold=RAG_CONFIG['similarity_threshold']
+        )
+    
+    if 'rag_indexed_files' not in st.session_state:
+        st.session_state.rag_indexed_files = set()
+    
+    if 'rag_chat_history' not in st.session_state:
+        st.session_state.rag_chat_history = []
+    
+    rag_processor = st.session_state.rag_processor
+    
+    # Settings sidebar
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔧 RAG Settings")
+    
+    chunk_size = st.sidebar.slider(
+        "Chunk Size",
+        min_value=500,
+        max_value=2000,
+        value=RAG_CONFIG['chunk_size'],
+        step=100,
+        help="Size of text chunks for processing"
+    )
+    
+    chunk_overlap = st.sidebar.slider(
+        "Chunk Overlap",
+        min_value=0,
+        max_value=500,
+        value=RAG_CONFIG['chunk_overlap'],
+        step=50,
+        help="Overlap between consecutive chunks"
+    )
+    
+    top_k = st.sidebar.slider(
+        "Top K Results",
+        min_value=1,
+        max_value=10,
+        value=RAG_CONFIG['top_k_results'],
+        help="Number of relevant chunks to retrieve"
+    )
+    
+    similarity_threshold = st.sidebar.slider(
+        "Similarity Threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=RAG_CONFIG['similarity_threshold'],
+        step=0.05,
+        help="Minimum similarity score for relevant results"
+    )
+    
+    # Update processor settings
+    rag_processor.chunk_size = chunk_size
+    rag_processor.chunk_overlap = chunk_overlap
+    rag_processor.top_k = top_k
+    rag_processor.similarity_threshold = similarity_threshold
+    
+    if st.sidebar.button("🗑️ Clear Chat History"):
+        st.session_state.rag_chat_history = []
+        rag_processor.memory.clear()
+        st.sidebar.success("Chat history cleared!")
+    
+    if st.sidebar.button("🔄 Reindex Documents"):
+        st.session_state.rag_indexed_files = set()
+        rag_processor.clear_documents()
+        st.sidebar.success("Documents cleared. Upload files to reindex.")
+    
+    # Main content
+    if not uploaded_files:
+        st.info("👆 Please upload files using the sidebar to get started with RAG Q&A")
+        return
+    
+    # Index uploaded files
+    st.subheader("📚 Document Indexing")
+    
+    files_to_index = []
+    for uploaded_file in uploaded_files:
+        if uploaded_file.name not in st.session_state.rag_indexed_files:
+            files_to_index.append(uploaded_file)
+    
+    if files_to_index:
+        with st.spinner(f"Indexing {len(files_to_index)} new documents..."):
+            progress_bar = st.progress(0)
+            
+            for idx, uploaded_file in enumerate(files_to_index):
+                # Save temporary file
+                temp_path = Path("data") / "temp" / uploaded_file.name
+                temp_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                try:
+                    # Extract text from document
+                    text_sections = DocumentTextExtractor.extract_from_file(str(temp_path))
+                    
+                    # Add each section to RAG processor
+                    for section_name, text in text_sections.items():
+                        if text:
+                            metadata = {
+                                'filename': uploaded_file.name,
+                                'section': section_name,
+                                'file_type': Path(uploaded_file.name).suffix
+                            }
+                            rag_processor.add_document(text, metadata)
+                    
+                    st.session_state.rag_indexed_files.add(uploaded_file.name)
+                    
+                except Exception as e:
+                    st.error(f"Error indexing {uploaded_file.name}: {str(e)}")
+                
+                finally:
+                    # Clean up temp file
+                    if temp_path.exists():
+                        temp_path.unlink()
+                
+                progress_bar.progress((idx + 1) / len(files_to_index))
+        
+        st.success(f"✅ Indexed {len(files_to_index)} new documents")
+    
+    # Display indexing stats
+    stats = rag_processor.get_stats()
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Indexed Documents", stats['num_documents'])
+    with col2:
+        st.metric("Text Chunks", stats['num_chunks'])
+    with col3:
+        st.metric("Avg Chunk Size", f"{stats['avg_chunk_size']:.0f} chars")
+    with col4:
+        st.metric("Chat History", stats['conversation_history'])
+    
+    st.markdown("---")
+    
+    # Q&A Interface
+    st.subheader("💬 Ask Questions")
+    
+    # Display chat history
+    if st.session_state.rag_chat_history:
+        st.markdown("### 📜 Chat History")
+        
+        for i, exchange in enumerate(st.session_state.rag_chat_history):
+            with st.expander(f"Q{i+1}: {exchange['question'][:100]}{'...' if len(exchange['question']) > 100 else ''}", expanded=(i == len(st.session_state.rag_chat_history) - 1)):
+                st.markdown(f"**Question:** {exchange['question']}")
+                st.markdown(f"**Answer:** {exchange['answer']}")
+                
+                if 'confidence' in exchange:
+                    st.progress(exchange['confidence'], text=f"Confidence: {exchange['confidence']:.2%}")
+                
+                if 'sources' in exchange and exchange['sources']:
+                    st.markdown("**Sources:**")
+                    for j, source in enumerate(exchange['sources']):
+                        with st.container():
+                            st.markdown(f"**Source {j+1}** (Score: {source['score']:.3f})")
+                            if 'metadata' in source:
+                                meta = source['metadata']
+                                st.caption(f"📄 {meta.get('filename', 'Unknown')} - {meta.get('section', 'N/A')}")
+                            st.text(source['text'])
+        
+        st.markdown("---")
+    
+    # Question input
+    question = st.text_input(
+        "Enter your question:",
+        placeholder="e.g., What is the total revenue for the year?",
+        key="rag_question_input"
+    )
+    
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        use_context = st.checkbox("Use Context", value=True, help="Use conversation history for better answers")
+    
+    if st.button("🔍 Ask Question", type="primary"):
+        if question:
+            with st.spinner("Searching documents and generating answer..."):
+                result = rag_processor.query(
+                    question,
+                    use_context=use_context,
+                    return_sources=True
+                )
+                
+                # Add to chat history
+                st.session_state.rag_chat_history.append(result)
+                
+                # Display latest answer
+                st.markdown("### 💡 Answer")
+                st.success(result['answer'])
+                
+                if result['confidence'] > 0:
+                    st.progress(result['confidence'], text=f"Confidence: {result['confidence']:.2%}")
+                
+                if 'sources' in result and result['sources']:
+                    st.markdown("### 📚 Sources")
+                    for i, source in enumerate(result['sources']):
+                        with st.expander(f"Source {i+1} (Score: {source['score']:.3f})"):
+                            if 'metadata' in source:
+                                meta = source['metadata']
+                                st.caption(f"📄 {meta.get('filename', 'Unknown')} - {meta.get('section', 'N/A')}")
+                            st.text(source['text'])
+                
+                # Rerun to update chat history display
+                st.rerun()
+        else:
+            st.warning("Please enter a question")
+
+
 def main():
     # Header
     st.markdown('<h1 class="main-header">🚀 AI Financial Data Extractor</h1>', unsafe_allow_html=True)
@@ -69,6 +292,7 @@ def main():
     - ✅ Automatic data normalization and conflict resolution
     - ✅ 20+ financial metrics calculation
     - ✅ Interactive visualizations
+    - ✅ RAG-powered document Q&A
     """)
 
     st.markdown("---")
@@ -136,7 +360,7 @@ def main():
             - Inventory Turnover
             """)
 
-    # Main content
+    # Main content - Add tabs for different functionality
     if not uploaded_files:
         st.info("👆 Please upload files using the sidebar to get started")
 
@@ -164,7 +388,26 @@ def main():
 
         return
 
-    # Process uploaded files
+    # Create tabs for different features
+    tab1, tab2 = st.tabs(["📊 Financial Data Extraction", "🤖 RAG Document Q&A"])
+    
+    with tab1:
+        render_financial_extraction_tab(uploaded_files, confidence_threshold, show_raw_data, show_debug)
+    
+    with tab2:
+        render_rag_tab(uploaded_files)
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style='text-align: center; color: #666;'>
+        <p>🚀 Built with Streamlit | Powered by AI | Achieving 99% Accuracy</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_financial_extraction_tab(uploaded_files, confidence_threshold, show_raw_data, show_debug):
+    """Render the financial data extraction tab (original functionality)"""
     st.header("🔄 Processing Files...")
 
     extracted_data_list = []
@@ -429,14 +672,6 @@ def main():
             file_name="financial_analysis_complete.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    <div style='text-align: center; color: #666;'>
-        <p>🚀 Built with Streamlit | Powered by AI | Achieving 99% Accuracy</p>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
