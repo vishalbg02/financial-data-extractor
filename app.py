@@ -14,6 +14,7 @@ from extractors.pdf_extractor import PDFExtractor
 from processors.data_normalizer import DataNormalizer
 from processors.financial_calculator import FinancialCalculator
 from config import ALLOWED_EXCEL_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, MAX_FILE_SIZE_MB
+from api.qa_routes import QAService
 
 # Page configuration
 st.set_page_config(
@@ -69,10 +70,26 @@ def main():
     - ✅ Automatic data normalization and conflict resolution
     - ✅ 20+ financial metrics calculation
     - ✅ Interactive visualizations
+    - ✅ **NEW: Question Answering with RAG**
     """)
 
     st.markdown("---")
 
+    # Main tabs for different functionality
+    tab1, tab2 = st.tabs(["📊 Data Extraction & Analysis", "💬 Ask Questions"])
+
+    with tab1:
+        handle_extraction_tab()
+    
+    with tab2:
+        handle_qa_tab()
+
+
+def handle_extraction_tab():
+    """Handle the data extraction and analysis tab."""
+
+def handle_extraction_tab():
+    """Handle the data extraction and analysis tab."""
     # Sidebar
     with st.sidebar:
         st.header("📁 Upload Files")
@@ -437,6 +454,181 @@ def main():
         <p>🚀 Built with Streamlit | Powered by AI | Achieving 99% Accuracy</p>
     </div>
     """, unsafe_allow_html=True)
+
+
+def handle_qa_tab():
+    """Handle the question answering tab."""
+    st.header("💬 Ask Questions About Your Documents")
+    
+    st.markdown("""
+    Upload financial documents and ask questions to get instant answers powered by RAG 
+    (Retrieval Augmented Generation). The system will search through your documents and 
+    provide answers with source citations.
+    """)
+
+    # Initialize QA service in session state
+    if 'qa_service' not in st.session_state:
+        try:
+            st.session_state.qa_service = QAService()
+        except Exception as e:
+            st.error(f"Failed to initialize QA service: {e}")
+            return
+
+    qa_service = st.session_state.qa_service
+
+    # Two columns: upload and stats
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.subheader("📤 Upload Documents")
+        
+        uploaded_files = st.file_uploader(
+            "Upload documents for Q&A",
+            accept_multiple_files=True,
+            type=['xlsx', 'xls', 'csv', 'pdf'],
+            key='qa_uploader'
+        )
+
+        if uploaded_files:
+            if st.button("Add to Knowledge Base", type="primary"):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                results = []
+                for idx, uploaded_file in enumerate(uploaded_files):
+                    status_text.text(f"Processing {uploaded_file.name}...")
+                    
+                    # Save temporary file
+                    temp_path = Path("data") / "temp" / uploaded_file.name
+                    temp_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    try:
+                        # Add to knowledge base
+                        result = qa_service.add_document_from_file(str(temp_path))
+                        results.append(result)
+                    except Exception as e:
+                        results.append({
+                            'success': False,
+                            'error': str(e),
+                            'file_name': uploaded_file.name
+                        })
+                    finally:
+                        # Clean up
+                        if temp_path.exists():
+                            temp_path.unlink()
+                    
+                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                
+                status_text.text("Processing complete!")
+                
+                # Show results
+                success_count = sum(1 for r in results if r.get('success', False))
+                st.success(f"✅ Successfully added {success_count}/{len(results)} documents")
+                
+                # Show details
+                for result in results:
+                    if result.get('success'):
+                        st.info(f"✓ {result.get('file_name', 'Unknown')}: {result.get('message', '')}")
+                    else:
+                        st.error(f"✗ {result.get('file_name', 'Unknown')}: {result.get('error', 'Unknown error')}")
+
+    with col2:
+        st.subheader("📊 Knowledge Base Stats")
+        stats = qa_service.get_knowledge_base_stats()
+        
+        if stats.get('success'):
+            st.metric("Total Documents", stats.get('total_chunks', 0))
+            st.metric("Index Size", stats.get('index_size', 0))
+            
+            if st.button("Clear Knowledge Base", type="secondary"):
+                clear_result = qa_service.clear_knowledge_base()
+                if clear_result.get('success'):
+                    st.success("Knowledge base cleared!")
+                    st.rerun()
+                else:
+                    st.error(f"Error: {clear_result.get('error', 'Unknown error')}")
+
+    st.markdown("---")
+
+    # Question answering section
+    st.subheader("❓ Ask Your Question")
+    
+    question = st.text_input(
+        "Enter your question:",
+        placeholder="What is the total revenue for 2023?",
+        key='qa_question'
+    )
+
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        k = st.slider("Number of sources to retrieve", min_value=1, max_value=10, value=5)
+    
+    with col2:
+        min_similarity = st.slider("Min similarity", min_value=0.0, max_value=1.0, value=0.3, step=0.05)
+
+    if st.button("Get Answer", type="primary"):
+        if not question:
+            st.warning("Please enter a question")
+        else:
+            with st.spinner("Searching documents and generating answer..."):
+                result = qa_service.answer_question(
+                    question=question,
+                    k=k,
+                    min_similarity=min_similarity
+                )
+            
+            if result.get('success'):
+                st.markdown("---")
+                st.subheader("💡 Answer")
+                st.markdown(result.get('answer', 'No answer generated'))
+                
+                # Show confidence
+                confidence = result.get('confidence', 0.0)
+                st.progress(confidence)
+                st.caption(f"Confidence: {confidence:.2%}")
+                
+                # Show sources
+                sources = result.get('sources', [])
+                if sources:
+                    st.markdown("---")
+                    st.subheader("📚 Sources")
+                    
+                    for idx, source in enumerate(sources, 1):
+                        with st.expander(f"Source {idx} (Similarity: {source.get('similarity', 0):.2%})"):
+                            st.markdown(f"**Text:**\n{source.get('text', '')}")
+                            
+                            metadata = source.get('metadata', {})
+                            if metadata:
+                                st.markdown("**Metadata:**")
+                                for key, value in metadata.items():
+                                    if key not in ['chunk_index', 'total_chunks']:
+                                        st.text(f"  {key}: {value}")
+            else:
+                st.error(f"Error: {result.get('error', 'Unknown error')}")
+
+    # Example questions
+    st.markdown("---")
+    st.subheader("💡 Example Questions")
+    
+    example_questions = [
+        "What is the total revenue?",
+        "What are the operating expenses?",
+        "What is the net income for the year?",
+        "What are the total assets?",
+        "What is the debt-to-equity ratio?",
+        "Show me the cash flow information"
+    ]
+    
+    cols = st.columns(3)
+    for idx, eq in enumerate(example_questions):
+        with cols[idx % 3]:
+            if st.button(eq, key=f'example_{idx}'):
+                st.session_state.qa_question = eq
+                st.rerun()
 
 
 if __name__ == "__main__":

@@ -38,4 +38,14 @@ class BaseExtractor(ABC):
             "modified_time": datetime.fromtimestamp(stat.st_mtime),
         }
 
+    def extract_full_text(self) -> str:
+        """
+        Extract full text content for RAG/QA purposes.
+        Subclasses should override this to provide full text extraction.
+        
+        Returns:
+            Full text content of the document
+        """
+        return ""
+
 
