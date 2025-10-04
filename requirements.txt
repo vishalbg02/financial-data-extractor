@@ -40,3 +40,8 @@ seaborn==0.13.0
 # Utilities
 python-dotenv==1.0.0
 jsonschema==4.20.0
+
+# RAG and Vector Store
+langchain==0.1.0
+chromadb==0.4.22
+tiktoken==0.5.2
