@@ -51,6 +51,10 @@ data/output/
 # FAISS indexes
 *.index
 *.faiss
+*.chunks
+
+# Vector store data
+data/vector_store/
 
 # Model cache
 .cache/

@@ -25,17 +25,22 @@ class FinancialCalculator:
             self.metrics["net_profit_margin"] = self._net_profit_margin(data_dict)
             self.metrics["return_on_assets"] = self._return_on_assets(data_dict)
             self.metrics["return_on_equity"] = self._return_on_equity(data_dict)
+            self.metrics["return_on_invested_capital"] = self._return_on_invested_capital(data_dict)
 
             # Liquidity Ratios
             self.metrics["current_ratio"] = self._current_ratio(data_dict)
             self.metrics["quick_ratio"] = self._quick_ratio(data_dict)
+            self.metrics["cash_ratio"] = self._cash_ratio(data_dict)
+            self.metrics["working_capital_ratio"] = self._working_capital_ratio(data_dict)
 
             # Leverage Ratios
             self.metrics["debt_to_equity"] = self._debt_to_equity(data_dict)
+            self.metrics["debt_ratio"] = self._debt_ratio(data_dict)
 
             # Efficiency Ratios
             self.metrics["asset_turnover"] = self._asset_turnover(data_dict)
             self.metrics["inventory_turnover"] = self._inventory_turnover(data_dict)
+            self.metrics["receivables_turnover"] = self._receivables_turnover(data_dict)
 
             # Remove None values
             self.metrics = {k: v for k, v in self.metrics.items() if v is not None}
@@ -141,6 +146,59 @@ class FinancialCalculator:
 
         if inventory and inventory != 0 and cogs:
             return round(cogs / inventory, 2)
+        return None
+
+    def _return_on_invested_capital(self, data: Dict) -> float:
+        """Net Operating Profit After Tax / Invested Capital * 100"""
+        operating_income = self._get_value(data, "operating_income")
+        total_assets = self._get_value(data, "total_assets")
+        current_liabilities = self._get_value(data, "current_liabilities")
+        
+        if operating_income and total_assets and current_liabilities:
+            # Simplified ROIC calculation
+            invested_capital = total_assets - current_liabilities
+            if invested_capital != 0:
+                # Approximate NOPAT as operating income * 0.75 (assuming 25% tax rate)
+                nopat = operating_income * 0.75
+                return round((nopat / invested_capital) * 100, 2)
+        return None
+
+    def _cash_ratio(self, data: Dict) -> float:
+        """Cash / Current Liabilities"""
+        cash = self._get_value(data, "cash")
+        current_liabilities = self._get_value(data, "current_liabilities")
+
+        if current_liabilities and current_liabilities != 0 and cash:
+            return round(cash / current_liabilities, 2)
+        return None
+
+    def _working_capital_ratio(self, data: Dict) -> float:
+        """(Current Assets - Current Liabilities) / Total Assets"""
+        current_assets = self._get_value(data, "current_assets")
+        current_liabilities = self._get_value(data, "current_liabilities")
+        total_assets = self._get_value(data, "total_assets")
+
+        if total_assets and total_assets != 0 and current_assets and current_liabilities:
+            working_capital = current_assets - current_liabilities
+            return round(working_capital / total_assets, 2)
+        return None
+
+    def _debt_ratio(self, data: Dict) -> float:
+        """Total Debt / Total Assets"""
+        total_debt = self._get_value(data, "total_debt")
+        total_assets = self._get_value(data, "total_assets")
+
+        if total_assets and total_assets != 0 and total_debt:
+            return round(total_debt / total_assets, 2)
+        return None
+
+    def _receivables_turnover(self, data: Dict) -> float:
+        """Revenue / Average Receivables"""
+        revenue = self._get_value(data, "revenue")
+        receivables = self._get_value(data, "receivables")
+
+        if receivables and receivables != 0 and revenue:
+            return round(revenue / receivables, 2)
         return None
 
     def get_metrics_dataframe(self) -> pd.DataFrame:

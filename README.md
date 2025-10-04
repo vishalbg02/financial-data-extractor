@@ -8,19 +8,31 @@ Advanced AI-powered financial data extraction system with **Retrieval Augmented 
 
 ## 🌟 Features
 
-### Data Extraction (Original)
+### Enhanced Data Extraction & Analysis
 - 📊 **Multi-Source Support:** Extract from PDF, Excel, and CSV files
 - 🔍 **Intelligent Matching:** Fuzzy matching and semantic similarity
-- 📈 **Financial Metrics:** Calculate 20+ financial ratios automatically
-- 🎨 **Visualizations:** Interactive charts and graphs
+- 📈 **16 Financial Metrics:** Comprehensive ratio analysis automatically
+  - Profitability: Margins, ROA, ROE, ROIC
+  - Liquidity: Current, Quick, Cash ratios
+  - Leverage: Debt-to-Equity, Debt ratio
+  - Efficiency: Asset, Inventory, Receivables turnover
+- 🎨 **Interactive Visualizations:** Dynamic charts and graphs
 - 🤖 **OCR Support:** Extract from scanned documents
 
-### Question Answering (NEW - RAG)
+### Advanced Analytics (NEW)
+- 🏥 **Financial Health Score:** 0-100 rating with comprehensive analysis
+- 🔍 **Anomaly Detection:** Automatic identification of concerning metrics
+- 💡 **Insights Generation:** Actionable recommendations based on data
+- 📄 **Automated Reports:** One-click comprehensive analysis reports
+- 📈 **Trend Indicators:** Visual performance indicators for all metrics
+
+### Integrated Question Answering (RAG)
 - 💬 **Natural Language Q&A:** Ask questions about your documents
-- 🧠 **Semantic Search:** Find relevant information using AI embeddings
-- 📚 **Multi-Document Support:** Query across multiple files
+- 🧠 **Context-Aware Answers:** Enhanced with calculated financial metrics
+- 📚 **Multi-Document Support:** Query across multiple files simultaneously
 - 🎯 **Source Citations:** View exact document sources for answers
-- ⚡ **Fast Retrieval:** Sub-second response times
+- ⚡ **Seamless Integration:** Single upload for both extraction and Q&A
+- 💡 **Smart Suggestions:** Context-aware question recommendations
 
 ## 🚀 Quick Start
 
@@ -65,28 +77,83 @@ print(f"Confidence: {answer['confidence']:.2%}")
 - [**Quick Start Guide**](docs/QUICK_START.md) - Get started in 5 minutes
 - [**RAG Documentation**](docs/RAG_README.md) - Technical details of RAG system
 - [**Integration Guide**](docs/INTEGRATION_GUIDE.md) - How RAG integrates with extraction
+- [**✨ Enhancements Guide**](docs/ENHANCEMENTS.md) - **NEW: Detailed guide to all new features**
 - [**Project Structure**](PROJECT_STRUCTURE.md) - Complete file organization
 - [**Implementation Summary**](IMPLEMENTATION_SUMMARY.md) - Development overview
 
+## ✨ What's New
+
+### Latest Enhancements (Current Version)
+
+🎯 **Seamless RAG Integration**
+- Single upload workflow - files automatically indexed for both extraction and Q&A
+- Integrated Q&A panel directly in extraction tab
+- Context-aware question suggestions based on extracted data
+
+📊 **Enhanced Financial Metrics** (16 total)
+- Added ROIC (Return on Invested Capital)
+- Added Cash Ratio and Working Capital Ratio
+- Added Debt Ratio
+- Added Receivables Turnover
+- Complete coverage of Profitability, Liquidity, Leverage, and Efficiency
+
+🏥 **Advanced Analytics**
+- **Financial Health Score**: 0-100 rating with 5-tier classification
+- **Anomaly Detection**: Automatic identification of concerning metrics with severity levels
+- **Insights Generation**: 8+ types of actionable recommendations
+- **Automated Reports**: One-click comprehensive analysis in Markdown format
+
+🧠 **Context-Aware Q&A**
+- Questions automatically enhanced with calculated metrics
+- Intelligent keyword mapping to relevant financial data
+- Cross-tab metric sharing for consistent answers
+- Visual indicators when metric enhancement is active
+
+📈 **Visual Enhancements**
+- Trend indicators (📈📉➡️) for all metrics
+- Color-coded health ratings (🟢🟡🟠🔴)
+- Severity icons for anomalies (🚨⚠️)
+- Organized metric displays by category
+
+See [ENHANCEMENTS.md](docs/ENHANCEMENTS.md) for complete details.
+
 ## 🎯 Use Cases
 
-### 1. Financial Data Extraction
-- Extract revenue, expenses, assets, liabilities
-- Calculate profit margins, ROI, debt ratios
-- Compare metrics across periods
-- Generate visualizations
+### 1. Comprehensive Financial Analysis
+- Upload financial statements (annual reports, quarterly statements)
+- **Automatically get**:
+  - 16 calculated financial metrics
+  - Financial health score and rating
+  - Anomaly detection and warnings
+  - Actionable insights and recommendations
+  - Automated summary reports
 
-### 2. Document Question Answering
-- "What was the revenue growth in Q4?"
-- "Show me operating expenses"
-- "What is the debt-to-equity ratio?"
-- "Summarize the cash flow statement"
+### 2. Interactive Document Q&A
+- Ask natural language questions about uploaded documents
+- Get answers enhanced with calculated metrics
+- View source citations from original documents
+- Examples:
+  - "What was the revenue growth in Q4?"
+  - "Explain the liquidity position" → Get answer + Current/Quick/Cash ratios
+  - "What is the debt-to-equity ratio?" → Document context + calculated value
+  - "Summarize the cash flow statement"
 
-### 3. Combined Analysis
-- Extract structured metrics
-- Ask contextual questions
-- Cross-reference data points
-- Generate comprehensive reports
+### 3. Financial Health Monitoring
+- Upload periodic financial reports
+- Track health score over time
+- Identify emerging issues via anomaly detection
+- Get automated insights on financial trends
+- Generate reports for stakeholders
+
+### 4. Combined Analysis Workflow
+- **Single Upload** → Multiple benefits:
+  1. Extract structured financial metrics
+  2. Calculate ratios and health score
+  3. Detect anomalies automatically
+  4. Ask questions about document details
+  5. Generate comprehensive reports
+- **Cross-reference** structured data with Q&A answers
+- **Export** results in multiple formats
 
 ## 🏗️ Architecture
 
