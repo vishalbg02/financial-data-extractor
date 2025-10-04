@@ -5,13 +5,35 @@ from sentence_transformers import SentenceTransformer
 import logging
 from typing import List, Tuple, Optional
 
+from utils.cache_manager import get_cache_manager
+
 logger = logging.getLogger(__name__)
 
 
 class AIExtractor:
-    """AI-powered extraction using semantic similarity"""
+    """AI-powered extraction using semantic similarity with lazy loading and caching"""
 
-    def __init__(self):
+    def __init__(self, lazy_load: bool = True):
+        """
+        Initialize AI extractor with lazy loading support
+        
+        Args:
+            lazy_load: If True, delay model loading until first use
+        """
+        self.lazy_load = lazy_load
+        self.model = None
+        self.vectorizer = None
+        self.use_transformer = False
+        self.cache_manager = get_cache_manager()
+        
+        if not lazy_load:
+            self._initialize_models()
+    
+    def _initialize_models(self):
+        """Initialize AI models (called lazily if needed)"""
+        if self.model is not None or self.vectorizer is not None:
+            return  # Already initialized
+        
         try:
             # Use sentence transformers for semantic matching
             self.model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -27,6 +49,9 @@ class AIExtractor:
                        candidates: List[str],
                        threshold: float = 0.75) -> Optional[Tuple[str, float]]:
         """Find the best matching candidate for a query"""
+        # Lazy load models if needed
+        if self.lazy_load and self.model is None and self.vectorizer is None:
+            self._initialize_models()
 
         if not candidates:
             return None

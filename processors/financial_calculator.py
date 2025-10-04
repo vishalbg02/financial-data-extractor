@@ -2,19 +2,37 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any
 import logging
+import hashlib
+import json
+
+from utils.cache_manager import get_cache_manager
 
 logger = logging.getLogger(__name__)
 
 
 class FinancialCalculator:
-    """Calculate financial metrics from normalized data"""
+    """Calculate financial metrics from normalized data with caching"""
 
     def __init__(self, data: pd.DataFrame):
         self.data = data
         self.metrics = {}
+        self.cache_manager = get_cache_manager()
+    
+    def _get_data_hash(self) -> str:
+        """Generate hash of input data for caching"""
+        data_str = json.dumps(self.data.to_dict(), sort_keys=True)
+        return hashlib.md5(data_str.encode()).hexdigest()
 
     def calculate_all_metrics(self) -> Dict[str, float]:
-        """Calculate all financial metrics"""
+        """Calculate all financial metrics with caching"""
+        # Check cache first
+        cache_key = f"financial_metrics_{self._get_data_hash()}"
+        cached_metrics = self.cache_manager.get(cache_key, memory_only=True)
+        if cached_metrics is not None:
+            logger.info("Using cached financial metrics")
+            self.metrics = cached_metrics
+            return self.metrics
+        
         try:
             # Convert DataFrame to dict for easier access
             data_dict = self.data["value"].to_dict()
@@ -44,6 +62,9 @@ class FinancialCalculator:
 
             # Remove None values
             self.metrics = {k: v for k, v in self.metrics.items() if v is not None}
+            
+            # Cache the result
+            self.cache_manager.set(cache_key, self.metrics, memory_only=True)
 
             logger.info(f"Calculated {len(self.metrics)} financial metrics")
             return self.metrics

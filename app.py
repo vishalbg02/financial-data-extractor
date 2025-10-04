@@ -211,12 +211,13 @@ def handle_extraction_tab():
 
     progress_bar = st.progress(0)
     status_text = st.empty()
+    detail_status = st.empty()
     
     # Track files for RAG integration
     processed_files_for_qa = []
 
     for idx, uploaded_file in enumerate(uploaded_files):
-        status_text.text(f"Processing {uploaded_file.name}...")
+        status_text.text(f"Processing {uploaded_file.name}... ({idx + 1}/{len(uploaded_files)})")
 
         # Save temporary file
         temp_path = Path("data") / "temp" / uploaded_file.name
@@ -230,9 +231,16 @@ def handle_extraction_tab():
             file_ext = Path(uploaded_file.name).suffix.lower()
 
             if file_ext in ALLOWED_EXCEL_EXTENSIONS:
+                detail_status.info(f"📊 Extracting from Excel: {uploaded_file.name}")
                 extractor = ExcelExtractor(str(temp_path))
             elif file_ext in ALLOWED_PDF_EXTENSIONS:
+                detail_status.info(f"📄 Extracting from PDF: {uploaded_file.name}")
                 extractor = PDFExtractor(str(temp_path))
+                
+                # Set up progress callback for PDF extraction
+                def progress_callback(operation, current, total):
+                    detail_status.info(f"📄 {operation}: {current}/{total} pages")
+                extractor.set_progress_callback(progress_callback)
             else:
                 file_status.append({
                     "file": uploaded_file.name,
@@ -242,6 +250,7 @@ def handle_extraction_tab():
                 continue
 
             # Extract data
+            detail_status.info(f"🔍 Analyzing financial data in {uploaded_file.name}")
             extracted_data = extractor.extract()
 
             # Validate
@@ -265,13 +274,18 @@ def handle_extraction_tab():
                 processed_files_for_qa.append((str(temp_path), uploaded_file.name))
 
         except Exception as e:
+            logger.error(f"Error processing {uploaded_file.name}: {str(e)}")
             file_status.append({
                 "file": uploaded_file.name,
                 "status": f"❌ Error: {str(e)}",
                 "variables": 0
             })
+            detail_status.error(f"Failed to process {uploaded_file.name}: {str(e)}")
 
         progress_bar.progress((idx + 1) / len(uploaded_files))
+    
+    # Clear detail status
+    detail_status.empty()
     
     # Add processed files to knowledge base for Q&A
     if st.session_state.qa_service and processed_files_for_qa:

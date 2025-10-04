@@ -4,12 +4,16 @@ from pdf2image import convert_from_path
 import easyocr
 import re
 import numpy as np
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional, Callable
 from fuzzywuzzy import fuzz
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 
 from extractors.base_extractor import BaseExtractor
 from config import FINANCIAL_VARIABLES
+from utils.cache_manager import get_cache_manager
+from utils.performance_monitor import get_performance_monitor
+from utils.optimized_ocr import OptimizedOCR
 
 logger = logging.getLogger(__name__)
 
@@ -21,24 +25,48 @@ class PDFExtractor(BaseExtractor):
         super().__init__(file_path)
         self.text_content = []
         self.tables = []
-        self.ocr_reader = easyocr.Reader(['en'])
+        # Use optimized OCR instead of direct EasyOCR
+        self.ocr_engine = OptimizedOCR(use_gpu=False, enable_cache=True)
+        self.cache_manager = get_cache_manager()
+        self.performance_monitor = get_performance_monitor()
+        self.progress_callback = None
 
+    def set_progress_callback(self, callback: Callable[[str, int, int], None]):
+        """
+        Set callback for progress tracking
+        
+        Args:
+            callback: Function(operation, current, total) to call for progress updates
+        """
+        self.progress_callback = callback
+    
     def extract(self) -> Dict[str, Any]:
         """Extract data from PDF using hybrid approach"""
         try:
-            # Method 1: Extract text using pdfplumber
-            self._extract_with_pdfplumber()
+            # Check cache first
+            cache_key = f"pdf_extract_{self.cache_manager._get_file_hash(self.file_path)}"
+            cached_result = self.cache_manager.get(cache_key)
+            if cached_result is not None:
+                logger.info("Using cached PDF extraction result")
+                return cached_result
+            
+            with self.performance_monitor.measure("PDF extraction"):
+                # Method 1: Extract text using pdfplumber
+                self._extract_with_pdfplumber()
 
-            # Method 2: Extract tables
-            self._extract_tables()
+                # Method 2: Extract tables
+                self._extract_tables()
 
-            # Method 3: OCR for scanned PDFs
-            if not self.text_content or len(self.text_content) < 100:
-                self._extract_with_ocr()
+                # Method 3: OCR for scanned PDFs
+                if not self.text_content or len(''.join(self.text_content)) < 100:
+                    self._extract_with_ocr()
 
-            # Extract financial variables
-            self.extracted_data = self._extract_financial_variables()
+                # Extract financial variables
+                self.extracted_data = self._extract_financial_variables()
 
+            # Cache result
+            self.cache_manager.set(cache_key, self.extracted_data)
+            
             logger.info(f"Successfully extracted data from PDF")
             return self.extracted_data
 
@@ -69,49 +97,75 @@ class PDFExtractor(BaseExtractor):
             logger.warning(f"Table extraction failed: {str(e)}")
 
     def _extract_with_ocr(self):
-        """Extract text using OCR for scanned PDFs"""
+        """Extract text using OCR for scanned PDFs with batch processing"""
         try:
-            logger.info("Performing OCR extraction...")
+            logger.info("Performing OCR extraction with batch processing...")
             images = convert_from_path(self.file_path)
-
-            for img in images:
-                # Use EasyOCR
-                result = self.ocr_reader.readtext(np.array(img))
-                text = ' '.join([item[1] for item in result])
-                self.text_content.append(text)
+            
+            if self.progress_callback:
+                self.progress_callback("OCR Processing", 0, len(images))
+            
+            def ocr_progress(current, total):
+                if self.progress_callback:
+                    self.progress_callback("OCR Processing", current, total)
+            
+            # Use batch OCR processing for better performance
+            texts = self.ocr_engine.extract_text_batch(
+                [np.array(img) for img in images],
+                preprocess=True,
+                progress_callback=ocr_progress
+            )
+            
+            self.text_content.extend(texts)
+            logger.info(f"OCR extraction completed for {len(images)} pages")
 
         except Exception as e:
             logger.warning(f"OCR extraction failed: {str(e)}")
 
     def _extract_financial_variables(self) -> Dict[str, Any]:
-        """Extract financial variables from text and tables"""
-        results = {}
+        """Extract financial variables from text and tables with parallel processing"""
+        with self.performance_monitor.measure("Financial variable extraction"):
+            results = {}
 
-        # Combine all text
-        full_text = ' '.join(self.text_content)
+            # Combine all text
+            full_text = ' '.join(self.text_content)
 
-        # Extract from tables first (higher accuracy)
-        for var_key, var_aliases in FINANCIAL_VARIABLES.items():
-            # Try tables first
-            value = self._search_in_tables(var_aliases)
-            if value is not None:
-                results[var_key] = {
-                    "value": value,
-                    "source": "table",
-                    "confidence": 0.95
+            # Use parallel processing for variable extraction
+            def extract_variable(var_item):
+                var_key, var_aliases = var_item
+                # Try tables first (higher accuracy)
+                value = self._search_in_tables(var_aliases)
+                if value is not None:
+                    return (var_key, {
+                        "value": value,
+                        "source": "table",
+                        "confidence": 0.95
+                    })
+
+                # Try text extraction
+                value = self._search_in_text(full_text, var_aliases)
+                if value is not None:
+                    return (var_key, {
+                        "value": value,
+                        "source": "text",
+                        "confidence": 0.85
+                    })
+                
+                return (var_key, None)
+            
+            # Process variables in parallel
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                future_to_var = {
+                    executor.submit(extract_variable, item): item[0]
+                    for item in FINANCIAL_VARIABLES.items()
                 }
-                continue
+                
+                for future in as_completed(future_to_var):
+                    var_key, result = future.result()
+                    if result is not None:
+                        results[var_key] = result
 
-            # Try text extraction
-            value = self._search_in_text(full_text, var_aliases)
-            if value is not None:
-                results[var_key] = {
-                    "value": value,
-                    "source": "text",
-                    "confidence": 0.85
-                }
-
-        return results
+            return results
 
     def _search_in_tables(self, aliases: List[str]) -> float:
         """Search for variable in extracted tables"""
