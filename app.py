@@ -16,6 +16,7 @@ from processors.data_normalizer import DataNormalizer
 from processors.financial_calculator import FinancialCalculator
 from config import ALLOWED_EXCEL_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, MAX_FILE_SIZE_MB
 from api.qa_routes import QAService
+from utils.analytics import FinancialAnalytics
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -371,9 +372,11 @@ def handle_extraction_tab():
                 if metric in metrics:
                     with cols[idx % 3]:
                         suffix = "%" if "margin" in metric or "return" in metric else ""
+                        trend = FinancialAnalytics.get_metric_trend(metrics[metric], metric)
                         st.metric(
                             metric.replace("_", " ").title(),
-                            f"{metrics[metric]}{suffix}"
+                            f"{metrics[metric]}{suffix}",
+                            delta=trend
                         )
 
         with tab2:
@@ -405,6 +408,73 @@ def handle_extraction_tab():
                             metric.replace("_", " ").title(),
                             f"{metrics[metric]}"
                         )
+        
+        # Add Financial Health & Insights Section
+        st.markdown("---")
+        st.header("🏥 Financial Health & Advanced Analytics")
+        
+        # Calculate health score
+        health_score, health_rating = FinancialAnalytics.calculate_health_score(metrics)
+        
+        col_health1, col_health2, col_health3 = st.columns([1, 1, 1])
+        
+        with col_health1:
+            st.metric("Overall Health Score", f"{health_score}/100")
+        
+        with col_health2:
+            # Color-code the rating
+            rating_colors = {
+                "Excellent": "🟢",
+                "Good": "🟡",
+                "Fair": "🟠",
+                "Poor": "🔴",
+                "Critical": "🔴"
+            }
+            icon = rating_colors.get(health_rating, "⚪")
+            st.metric("Rating", f"{icon} {health_rating}")
+        
+        with col_health3:
+            anomaly_count = len(FinancialAnalytics.detect_anomalies(metrics))
+            st.metric("Anomalies Detected", anomaly_count)
+        
+        # Display insights and anomalies in expandable sections
+        insight_col1, insight_col2 = st.columns(2)
+        
+        with insight_col1:
+            with st.expander("💡 Key Insights", expanded=True):
+                insights = FinancialAnalytics.generate_insights(metrics, normalized_df)
+                if insights:
+                    for insight in insights:
+                        st.markdown(f"- {insight}")
+                else:
+                    st.info("No specific insights available with current data")
+        
+        with insight_col2:
+            with st.expander("🔍 Detected Anomalies", expanded=True):
+                anomalies = FinancialAnalytics.detect_anomalies(metrics)
+                if anomalies:
+                    for anomaly in anomalies:
+                        severity_color = "🚨" if anomaly['severity'] == 'high' else "⚠️"
+                        st.markdown(f"{severity_color} **{anomaly['metric'].replace('_', ' ').title()}**: {anomaly['message']}")
+                else:
+                    st.success("✅ No anomalies detected - all metrics within normal ranges")
+        
+        # Add automated report generation
+        st.markdown("---")
+        st.subheader("📄 Automated Financial Report")
+        
+        if st.button("Generate Comprehensive Report", type="primary"):
+            with st.spinner("Generating report..."):
+                report = FinancialAnalytics.generate_summary_report(metrics, normalized_df)
+                st.markdown(report)
+                
+                # Provide download option
+                st.download_button(
+                    label="📥 Download Report (Markdown)",
+                    data=report,
+                    file_name="financial_analysis_report.md",
+                    mime="text/markdown"
+                )
         
         # Add unified Q&A interface below metrics
         st.markdown("---")
