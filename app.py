@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 import os
 import sys
+import logging
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -15,6 +16,9 @@ from processors.data_normalizer import DataNormalizer
 from processors.financial_calculator import FinancialCalculator
 from config import ALLOWED_EXCEL_EXTENSIONS, ALLOWED_PDF_EXTENSIONS, MAX_FILE_SIZE_MB
 from api.qa_routes import QAService
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
@@ -87,9 +91,14 @@ def main():
 
 def handle_extraction_tab():
     """Handle the data extraction and analysis tab."""
-
-def handle_extraction_tab():
-    """Handle the data extraction and analysis tab."""
+    # Initialize QA service in session state for integrated RAG
+    if 'qa_service' not in st.session_state:
+        try:
+            st.session_state.qa_service = QAService()
+        except Exception as e:
+            st.warning(f"RAG Q&A not available: {e}")
+            st.session_state.qa_service = None
+    
     # Sidebar
     with st.sidebar:
         st.header("📁 Upload Files")
@@ -141,16 +150,28 @@ def handle_extraction_tab():
 
         with st.expander("Calculated Metrics"):
             st.markdown("""
+            **Profitability:**
             - Gross Profit Margin
             - Operating Profit Margin
             - Net Profit Margin
             - Return on Assets (ROA)
             - Return on Equity (ROE)
+            - Return on Invested Capital (ROIC)
+            
+            **Liquidity:**
             - Current Ratio
             - Quick Ratio
+            - Cash Ratio
+            - Working Capital Ratio
+            
+            **Leverage:**
             - Debt-to-Equity Ratio
+            - Debt Ratio
+            
+            **Efficiency:**
             - Asset Turnover
             - Inventory Turnover
+            - Receivables Turnover
             """)
 
     # Main content
@@ -189,6 +210,9 @@ def handle_extraction_tab():
 
     progress_bar = st.progress(0)
     status_text = st.empty()
+    
+    # Track files for RAG integration
+    processed_files_for_qa = []
 
     for idx, uploaded_file in enumerate(uploaded_files):
         status_text.text(f"Processing {uploaded_file.name}...")
@@ -227,6 +251,8 @@ def handle_extraction_tab():
                     "status": "✅ Success",
                     "variables": len(extracted_data)
                 })
+                # Add to list for RAG processing
+                processed_files_for_qa.append((str(temp_path), uploaded_file.name))
             else:
                 file_status.append({
                     "file": uploaded_file.name,
@@ -234,6 +260,8 @@ def handle_extraction_tab():
                     "variables": len(extracted_data)
                 })
                 extracted_data_list.append(extracted_data)
+                # Still add to RAG for Q&A
+                processed_files_for_qa.append((str(temp_path), uploaded_file.name))
 
         except Exception as e:
             file_status.append({
@@ -242,12 +270,31 @@ def handle_extraction_tab():
                 "variables": 0
             })
 
-        finally:
-            # Clean up temp file
-            if temp_path.exists():
-                temp_path.unlink()
-
         progress_bar.progress((idx + 1) / len(uploaded_files))
+    
+    # Add processed files to knowledge base for Q&A
+    if st.session_state.qa_service and processed_files_for_qa:
+        with st.spinner("Building knowledge base for Q&A..."):
+            qa_added = 0
+            for file_path, file_name in processed_files_for_qa:
+                try:
+                    result = st.session_state.qa_service.add_document_from_file(file_path)
+                    if result.get('success'):
+                        qa_added += 1
+                except Exception as e:
+                    logger.warning(f"Could not add {file_name} to knowledge base: {e}")
+            
+            if qa_added > 0:
+                st.success(f"✅ {qa_added} document(s) ready for Q&A in the unified interface below!")
+    
+    # Clean up temp files
+    for file_path, _ in processed_files_for_qa:
+        temp_file = Path(file_path)
+        if temp_file.exists():
+            try:
+                temp_file.unlink()
+            except:
+                pass
 
     status_text.text("Processing complete!")
 
@@ -311,10 +358,10 @@ def handle_extraction_tab():
 
         # Group metrics by category
         profitability = ["gross_profit_margin", "operating_profit_margin", "net_profit_margin", "return_on_assets",
-                         "return_on_equity"]
-        liquidity = ["current_ratio", "quick_ratio"]
-        leverage = ["debt_to_equity"]
-        efficiency = ["asset_turnover", "inventory_turnover"]
+                         "return_on_equity", "return_on_invested_capital"]
+        liquidity = ["current_ratio", "quick_ratio", "cash_ratio", "working_capital_ratio"]
+        leverage = ["debt_to_equity", "debt_ratio"]
+        efficiency = ["asset_turnover", "inventory_turnover", "receivables_turnover"]
 
         tab1, tab2, tab3, tab4 = st.tabs(["💰 Profitability", "💧 Liquidity", "⚖️ Leverage", "⚡ Efficiency"])
 
@@ -340,18 +387,113 @@ def handle_extraction_tab():
                         )
 
         with tab3:
-            if "debt_to_equity" in metrics:
-                st.metric("Debt-to-Equity Ratio", f"{metrics['debt_to_equity']}")
-
-        with tab4:
             cols = st.columns(2)
-            for idx, metric in enumerate(efficiency):
+            for idx, metric in enumerate(leverage):
                 if metric in metrics:
                     with cols[idx % 2]:
                         st.metric(
                             metric.replace("_", " ").title(),
                             f"{metrics[metric]}"
                         )
+
+        with tab4:
+            cols = st.columns(3)
+            for idx, metric in enumerate(efficiency):
+                if metric in metrics:
+                    with cols[idx % 3]:
+                        st.metric(
+                            metric.replace("_", " ").title(),
+                            f"{metrics[metric]}"
+                        )
+        
+        # Add unified Q&A interface below metrics
+        st.markdown("---")
+        st.header("💬 Ask Questions About Your Data")
+        
+        if st.session_state.qa_service:
+            qa_service = st.session_state.qa_service
+            stats = qa_service.get_knowledge_base_stats()
+            
+            if stats.get('success') and stats.get('total_chunks', 0) > 0:
+                col_qa1, col_qa2 = st.columns([2, 1])
+                
+                with col_qa1:
+                    st.info(f"📚 Knowledge base ready with {stats.get('total_chunks', 0)} chunks from your documents")
+                    
+                    # Suggested questions based on available metrics
+                    st.subheader("💡 Suggested Questions")
+                    suggestions = [
+                        "What is the total revenue?",
+                        "What are the operating expenses?",
+                        "What is the net income?",
+                        "Show me the cash flow information",
+                        "What are the total assets and liabilities?",
+                    ]
+                    
+                    # Add metric-specific suggestions
+                    if "gross_profit_margin" in metrics:
+                        suggestions.append("Explain the gross profit margin")
+                    if "current_ratio" in metrics:
+                        suggestions.append("What is the liquidity position?")
+                    
+                    cols_sugg = st.columns(3)
+                    for idx, suggestion in enumerate(suggestions[:6]):
+                        with cols_sugg[idx % 3]:
+                            if st.button(suggestion, key=f"sugg_{idx}", use_container_width=True):
+                                st.session_state.unified_question = suggestion
+                    
+                    # Question input
+                    question = st.text_input(
+                        "Or ask your own question:",
+                        placeholder="What is the debt-to-equity ratio?",
+                        key='unified_question'
+                    )
+                    
+                    col_k, col_sim = st.columns(2)
+                    with col_k:
+                        k = st.slider("Sources to retrieve", 1, 10, 5, key='unified_k')
+                    with col_sim:
+                        min_sim = st.slider("Min similarity", 0.0, 1.0, 0.3, 0.05, key='unified_sim')
+                    
+                    if st.button("Get Answer", type="primary", use_container_width=True):
+                        if question:
+                            with st.spinner("Analyzing documents..."):
+                                result = qa_service.answer_question(question, k=k, min_similarity=min_sim)
+                            
+                            if result.get('success'):
+                                st.markdown("### 💡 Answer")
+                                st.markdown(result.get('answer', 'No answer generated'))
+                                
+                                # Show confidence
+                                confidence = result.get('confidence', 0.0)
+                                st.progress(confidence)
+                                st.caption(f"Confidence: {confidence:.2%}")
+                                
+                                # Show sources
+                                sources = result.get('sources', [])
+                                if sources:
+                                    st.markdown("### 📚 Sources")
+                                    for idx, source in enumerate(sources[:3], 1):
+                                        with st.expander(f"Source {idx} (Similarity: {source.get('similarity', 0):.2%})"):
+                                            st.text(source.get('text', '')[:500])
+                            else:
+                                st.error(f"Error: {result.get('error', 'Unknown error')}")
+                        else:
+                            st.warning("Please enter a question")
+                
+                with col_qa2:
+                    st.subheader("📊 KB Stats")
+                    st.metric("Documents", stats.get('total_chunks', 0))
+                    st.metric("Index Size", stats.get('index_size', 0))
+                    
+                    if st.button("Clear KB", type="secondary"):
+                        qa_service.clear_knowledge_base()
+                        st.success("Cleared!")
+                        st.rerun()
+            else:
+                st.info("💡 Upload files above to enable Q&A functionality")
+        else:
+            st.info("💡 Q&A service not available - upload files to activate")
 
         # Visualizations
         st.markdown("---")
