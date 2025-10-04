@@ -21,12 +21,11 @@ class ExcelExtractor(BaseExtractor):
     def extract(self) -> Dict[str, Any]:
         """Extract data from Excel file"""
         try:
-            # Read all sheets
-            excel_file = pd.ExcelFile(self.file_path)
-
-            for sheet_name in excel_file.sheet_names:
-                df = pd.read_excel(self.file_path, sheet_name=sheet_name, header=None)
-                self.sheets[sheet_name] = df
+            # Read all sheets using context manager
+            with pd.ExcelFile(self.file_path) as excel_file:
+                for sheet_name in excel_file.sheet_names:
+                    df = pd.read_excel(excel_file, sheet_name=sheet_name, header=None)
+                    self.sheets[sheet_name] = df.copy()  # Create a copy to ensure file handle is released
 
             # Extract financial variables
             self.extracted_data = self._extract_financial_variables()
@@ -37,6 +36,11 @@ class ExcelExtractor(BaseExtractor):
         except Exception as e:
             logger.error(f"Error extracting Excel data: {str(e)}")
             raise
+        finally:
+            # Explicitly clear any remaining references
+            for sheet_name in list(self.sheets.keys()):
+                del self.sheets[sheet_name]
+            self.sheets.clear()
 
     def _extract_financial_variables(self) -> Dict[str, Any]:
         """Extract financial variables from all sheets"""
