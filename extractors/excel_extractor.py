@@ -155,3 +155,38 @@ class ExcelExtractor(BaseExtractor):
         found_count = sum(1 for var in key_variables if var in self.extracted_data)
 
         return found_count >= 1
+
+    def extract_full_text(self) -> str:
+        """
+        Extract full text content for RAG/QA purposes.
+        
+        Returns:
+            Full text content of the Excel file
+        """
+        if not self.sheets:
+            # Need to load the file first
+            try:
+                self.sheets = pd.read_excel(self.file_path, sheet_name=None)
+            except Exception as e:
+                logger.error(f"Error loading Excel file: {e}")
+                return ""
+        
+        text_parts = []
+        
+        for sheet_name, df in self.sheets.items():
+            text_parts.append(f"Sheet: {sheet_name}")
+            
+            # Convert dataframe to text representation
+            # Include headers and data
+            for col in df.columns:
+                text_parts.append(f"Column: {col}")
+            
+            # Convert rows to text
+            for idx, row in df.iterrows():
+                row_text = ' | '.join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
+                if row_text:
+                    text_parts.append(row_text)
+            
+            text_parts.append("")  # Blank line between sheets
+        
+        return '\n'.join(text_parts)

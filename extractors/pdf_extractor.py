@@ -191,3 +191,37 @@ class PDFExtractor(BaseExtractor):
     def validate(self) -> bool:
         """Validate extracted data"""
         return bool(self.extracted_data)
+
+    def extract_full_text(self) -> str:
+        """
+        Extract full text content for RAG/QA purposes.
+        
+        Returns:
+            Full text content of the PDF
+        """
+        # If text_content is already populated from extraction, use it
+        if self.text_content:
+            return '\n\n'.join(self.text_content)
+        
+        # Otherwise, extract text
+        try:
+            text_parts = []
+            
+            # Extract text using pdfplumber
+            with pdfplumber.open(self.file_path) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+            
+            # Add table content as text
+            if self.tables:
+                for table in self.tables:
+                    table_text = '\n'.join([' | '.join([str(cell) for cell in row if cell]) for row in table])
+                    text_parts.append(f"Table:\n{table_text}")
+            
+            return '\n\n'.join(text_parts)
+            
+        except Exception as e:
+            logger.error(f"Error extracting full text from PDF: {e}")
+            return ""
