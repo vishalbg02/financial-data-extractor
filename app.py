@@ -125,6 +125,43 @@ def handle_extraction_tab():
 
         show_raw_data = st.checkbox("Show Raw Extracted Data", value=False)
         show_debug = st.checkbox("Show Debug Information", value=False)
+        
+        # Performance settings
+        with st.expander("⚡ Performance Settings"):
+            enable_cache = st.checkbox("Enable Caching", value=True, 
+                                      help="Cache results for faster reprocessing")
+            enable_parallel = st.checkbox("Parallel Processing", value=True,
+                                         help="Process multiple files in parallel")
+            
+            if st.button("Clear Cache"):
+                try:
+                    from utils.cache_manager import get_cache_manager
+                    cache_manager = get_cache_manager()
+                    cache_manager.clear_all()
+                    st.success("Cache cleared successfully!")
+                except Exception as e:
+                    st.error(f"Failed to clear cache: {e}")
+        
+        # System resources monitoring
+        with st.expander("💻 System Resources"):
+            try:
+                from utils.performance_monitor import get_performance_monitor
+                monitor = get_performance_monitor()
+                stats = monitor.get_system_stats()
+                
+                if stats:
+                    st.metric("CPU Usage", f"{stats.get('cpu_percent', 0):.1f}%")
+                    st.metric("Memory Usage", f"{stats.get('memory_percent', 0):.1f}%")
+                    st.metric("Available Memory", 
+                             f"{stats.get('memory_available_mb', 0):.0f} MB")
+                    
+                    # Resource warnings
+                    resource_check = monitor.check_resources()
+                    if not resource_check['has_sufficient_resources']:
+                        for warning in resource_check['warnings']:
+                            st.warning(warning)
+            except Exception as e:
+                st.info("Resource monitoring unavailable")
 
         st.markdown("---")
 
@@ -275,12 +312,33 @@ def handle_extraction_tab():
 
         except Exception as e:
             logger.error(f"Error processing {uploaded_file.name}: {str(e)}")
-            file_status.append({
-                "file": uploaded_file.name,
-                "status": f"❌ Error: {str(e)}",
-                "variables": 0
-            })
-            detail_status.error(f"Failed to process {uploaded_file.name}: {str(e)}")
+            
+            # Use error recovery system
+            try:
+                from utils.error_recovery import handle_extraction_error
+                error_info = handle_extraction_error(e, uploaded_file.name)
+                
+                file_status.append({
+                    "file": uploaded_file.name,
+                    "status": f"❌ Error",
+                    "variables": 0
+                })
+                
+                # Show detailed error with recovery suggestions
+                with st.expander(f"❌ Error Details: {uploaded_file.name}", expanded=True):
+                    st.markdown(error_info['formatted_message'])
+                    
+                    if error_info['can_retry']:
+                        if st.button(f"Retry {uploaded_file.name}", key=f"retry_{idx}"):
+                            st.rerun()
+            except ImportError:
+                # Fallback if error_recovery not available
+                file_status.append({
+                    "file": uploaded_file.name,
+                    "status": f"❌ Error: {str(e)}",
+                    "variables": 0
+                })
+                detail_status.error(f"Failed to process {uploaded_file.name}: {str(e)}")
 
         progress_bar.progress((idx + 1) / len(uploaded_files))
     
